@@ -37,7 +37,10 @@ python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-To run the CLI from the checkout:
+That `pip install -e .` step installs the `eic-ask` launcher into the
+environment's `bin/` directory, which is on `PATH` after activation.
+
+To run the CLI from the checkout without installing it, use:
 
 ```console
 python -m eic_ask --help
