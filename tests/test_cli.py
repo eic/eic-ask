@@ -1,0 +1,98 @@
+import io
+import json
+import unittest
+from unittest import mock
+import urllib.error
+import urllib.request
+
+from eic_ask.cli import main
+
+
+class _FakeResponse:
+    def __init__(self, body: str):
+        self._body = body.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self):
+        return self._body
+
+
+class CliTests(unittest.TestCase):
+    def test_unquoted_prompt_is_joined_into_query(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            captured["headers"] = dict(request.headers)
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return _FakeResponse('{"answer":"Use podio with a local analysis workflow."}')
+
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=io.StringIO()
+        ):
+            exit_code = main(
+                [
+                    "What",
+                    "is",
+                    "a",
+                    "good",
+                    "example",
+                    "for",
+                    "podio",
+                    "data",
+                    "analysis",
+                    "in",
+                    "C++?",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(captured["url"], "https://api.aprozo.com/query")
+        self.assertEqual(captured["timeout"], 30.0)
+        self.assertEqual(captured["body"], {"query": "What is a good example for podio data analysis in C++?"})
+
+    def test_http_error_is_reported_clearly(self):
+        error = urllib.error.HTTPError(
+            "https://api.aprozo.com/query",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(b'{"error":"missing query"}'),
+        )
+
+        def fake_urlopen(*args, **kwargs):
+            raise error
+
+        stderr = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stderr", new=stderr
+        ):
+            exit_code = main(["--endpoint", "https://api.aprozo.com/query", "help"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("API request failed: 400 Bad Request", stderr.getvalue())
+        self.assertIn('"error":"missing query"', stderr.getvalue())
+
+    def test_raw_json_mode_prints_full_payload(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse('{"nested":{"value":1}}')
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            exit_code = main(["--json", "status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"nested": {', stdout.getvalue())
+        self.assertIn('"value": 1', stdout.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
