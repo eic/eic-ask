@@ -5,13 +5,17 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from eic_ask import __version__
+
 
 DEFAULT_ENDPOINT = "https://api.aprozo.com/query"
 DEFAULT_TIMEOUT = 30.0
+DEFAULT_USER_AGENT = f"eic-ask/{__version__}"
 
 
 class CLIError(RuntimeError):
@@ -68,16 +72,28 @@ def _request_payload(prompt: str) -> bytes:
 
 
 def _build_request(prompt: str, config: RequestConfig) -> urllib.request.Request:
-    request = urllib.request.Request(
+    token = os.getenv("EIC_ASK_TOKEN")
+    endpoint = urllib.parse.urlparse(config.endpoint)
+    if token and endpoint.scheme.lower() != "https":
+        raise CLIError(
+            "EIC_ASK_TOKEN is only sent to HTTPS endpoints. "
+            f"Refusing to send the token to {config.endpoint!r}."
+        )
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+    if token:
+        headers["Authorization"] = "Bearer " + token
+
+    return urllib.request.Request(
         config.endpoint,
         data=_request_payload(prompt),
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers=headers,
         method="POST",
     )
-    token = os.getenv("EIC_ASK_TOKEN")
-    if token:
-        request.add_header("Authorization", "Bearer " + token)
-    return request
 
 
 def _read_response_body(response: Any) -> str:
