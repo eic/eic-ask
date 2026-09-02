@@ -27,6 +27,7 @@ class RequestConfig:
     endpoint: str
     timeout: float
     raw_json: bool
+    show_references: bool = True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Print the full response as formatted JSON.",
+    )
+    parser.add_argument(
+        "--no-references",
+        "--hide-references",
+        dest="show_references",
+        action="store_false",
+        help="Hide numbered references after the response text.",
     )
     return parser
 
@@ -134,12 +142,56 @@ def _extract_text(value: Any) -> str | None:
     return None
 
 
-def _format_output(payload: Any, raw_json: bool) -> str:
+def _extract_references(payload: Any) -> list[str]:
+    if isinstance(payload, dict):
+        for key in ("references", "citations", "sources", "footnotes"):
+            if key in payload:
+                value = payload[key]
+                if isinstance(value, list):
+                    return _extract_references(value)
+                if isinstance(value, dict):
+                    refs = _extract_references(value)
+                    if refs:
+                        return refs
+                return []
+        return []
+    if isinstance(payload, list):
+        refs = []
+        for item in payload:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    refs.append(text)
+                continue
+            if isinstance(item, dict):
+                for key in ("text", "title", "label", "name", "source", "citation"):
+                    value = item.get(key)
+                    if value is None:
+                        continue
+                    text = _extract_text(value)
+                    if text:
+                        refs.append(text)
+                        break
+        return refs
+    return []
+
+
+def _format_references(references: list[str]) -> str:
+    """Render numbered references beneath the answer text."""
+    return "\n".join(f"[{index}] {ref}" for index, ref in enumerate(references, start=1))
+
+
+def _format_output(payload: Any, raw_json: bool, show_references: bool) -> str:
     if raw_json:
         return _pretty_json(payload)
     text = _extract_text(payload)
     if text:
-        return text
+        parts = [text]
+        if show_references:
+            references = _extract_references(payload)
+            if references:
+                parts.append(_format_references(references))
+        return "\n\n".join(parts)
     return _pretty_json(payload)
 
 
@@ -176,7 +228,7 @@ def ask(prompt: str, config: RequestConfig) -> str:
             f"Expected JSON but received: {body_text[:200]}"
         ) from exc
 
-    return _format_output(payload, config.raw_json)
+    return _format_output(payload, config.raw_json, config.show_references)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -193,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                 endpoint=args.endpoint,
                 timeout=args.timeout,
                 raw_json=args.json,
+                show_references=args.show_references,
             ),
         )
     except CLIError as exc:

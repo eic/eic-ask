@@ -178,6 +178,39 @@ class CliTests(unittest.TestCase):
         self.assertIn('"nested": {', stdout.getvalue())
         self.assertIn('"value": 1', stdout.getvalue())
 
+    def test_references_are_printed_below_answer(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse(
+                '{"answer":"The EIC is a collider. [1]","references":["Brookhaven National Laboratory","ePIC experiment"]}'
+            )
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("The EIC is a collider.", output)
+        self.assertIn("[1] Brookhaven National Laboratory", output)
+        self.assertIn("[2] ePIC experiment", output)
+
+    def test_references_can_be_hidden(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse(
+                '{"answer":"The EIC is a collider. [1]","references":["Brookhaven National Laboratory"]}'
+            )
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            exit_code = main(["--no-references", "status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("[1] Brookhaven National Laboratory", stdout.getvalue())
+
     def test_extract_text_joins_lists_of_dict_items(self):
         self.assertEqual(_extract_text([{"text": "one"}, {"text": "two"}]), "one\ntwo")
 

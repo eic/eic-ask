@@ -19,6 +19,9 @@ Useful options:
 - `-e, --endpoint` — override the API URL
 - `-t, --timeout` — set the request timeout in seconds
 - `--json` — print the full response as formatted JSON
+- `--no-references` / `--hide-references` — suppress numbered references printed below the answer
+
+Responses include numbered references below the answer text by default when the API provides them.
 
 Authentication is optional and can be provided via `EIC_ASK_TOKEN`.
 
