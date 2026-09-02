@@ -211,6 +211,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertNotIn("[1] Brookhaven National Laboratory", stdout.getvalue())
 
+    def test_reference_links_are_included(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse(
+                '{"answer":"The EIC is a collider. [1]","references":[{"title":"Brookhaven National Laboratory","url":"https://www.bnl.gov/"}]}'
+            )
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        output = stdout.getvalue()
+        self.assertIn("[1] Brookhaven National Laboratory (https://www.bnl.gov/)", output)
+
     def test_extract_text_joins_lists_of_dict_items(self):
         self.assertEqual(_extract_text([{"text": "one"}, {"text": "two"}]), "one\ntwo")
 

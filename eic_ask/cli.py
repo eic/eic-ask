@@ -164,14 +164,31 @@ def _extract_references(payload: Any) -> list[str]:
                     refs.append(text)
                 continue
             if isinstance(item, dict):
+                label = None
                 for key in ("text", "title", "label", "name", "source", "citation"):
                     value = item.get(key)
                     if value is None:
                         continue
                     text = _extract_text(value)
                     if text:
-                        refs.append(text)
+                        label = text
                         break
+
+                url = None
+                for key in ("url", "link", "href", "source_url", "website"):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        text = value.strip()
+                        if text:
+                            url = text
+                            break
+
+                if label and url:
+                    refs.append(f"{label} ({url})")
+                elif label:
+                    refs.append(label)
+                elif url:
+                    refs.append(url)
         return refs
     return []
 
