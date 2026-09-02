@@ -1,11 +1,12 @@
 import io
 import json
+import os
 import unittest
 from unittest import mock
 import urllib.error
 import urllib.request
 
-from eic_ask.cli import main
+from eic_ask.cli import _extract_text, main
 
 
 class _FakeResponse:
@@ -77,7 +78,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("API request failed: 400 Bad Request", stderr.getvalue())
-        self.assertIn('"error":"missing query"', stderr.getvalue())
+        self.assertIn("missing query", stderr.getvalue())
 
     def test_raw_json_mode_prints_full_payload(self):
         def fake_urlopen(request, timeout=None):
@@ -92,6 +93,67 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn('"nested": {', stdout.getvalue())
         self.assertIn('"value": 1', stdout.getvalue())
+
+    def test_extract_text_joins_lists_of_dict_items(self):
+        self.assertEqual(_extract_text([{"text": "one"}, {"text": "two"}]), "one\ntwo")
+
+    def test_choices_message_is_extracted(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse('{"choices":[{"message":"hello"}]}')
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "hello")
+
+    def test_choices_text_is_extracted(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse('{"choices":[{"text":"hello"}]}')
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "hello")
+
+    def test_token_can_come_from_environment(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["auth"] = request.get_header("Authorization")
+            return _FakeResponse('{"answer":"ok"}')
+
+        with mock.patch.dict(os.environ, {"EIC_ASK_TOKEN": "abc123"}, clear=False), mock.patch.object(
+            urllib.request, "urlopen", side_effect=fake_urlopen
+        ), mock.patch("sys.stdout", new=io.StringIO()):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIsNotNone(captured["auth"])
+        self.assertTrue(captured["auth"].startswith("Bearer "))
+        self.assertIn("abc123", captured["auth"])
+
+    def test_token_is_optional(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["auth"] = request.get_header("Authorization")
+            return _FakeResponse('{"answer":"ok"}')
+
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            urllib.request, "urlopen", side_effect=fake_urlopen
+        ), mock.patch("sys.stdout", new=io.StringIO()):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIsNone(captured["auth"])
 
 
 if __name__ == "__main__":

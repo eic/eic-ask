@@ -22,7 +22,6 @@ class CLIError(RuntimeError):
 class RequestConfig:
     endpoint: str
     timeout: float
-    token: str | None
     raw_json: bool
 
 
@@ -31,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="eic-ask",
         description="Send a prompt to the EIC Aprozo query API.",
     )
-    parser.add_argument("prompt", nargs="*", help="Prompt to send to the API.")
+    parser.add_argument("prompt", nargs="*", help="Prompt to send to the API or stdin.")
     parser.add_argument(
         "-e",
         "--endpoint",
@@ -44,11 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_TIMEOUT,
         help=f"Request timeout in seconds (default: {DEFAULT_TIMEOUT}).",
-    )
-    parser.add_argument(
-        "--token",
-        default=os.getenv("EIC_ASK_TOKEN"),
-        help="OAuth bearer token for authenticated access.",
     )
     parser.add_argument(
         "--json",
@@ -80,8 +74,9 @@ def _build_request(prompt: str, config: RequestConfig) -> urllib.request.Request
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    if config.token:
-        request.add_header("Authorization", "Bearer " + config.token)
+    token = os.getenv("EIC_ASK_TOKEN")
+    if token:
+        request.add_header("Authorization", "Bearer " + token)
     return request
 
 
@@ -99,19 +94,19 @@ def _extract_text(value: Any) -> str | None:
         text = value.strip()
         return text or None
     if isinstance(value, list):
-        texts = [text for item in value if (text := _extract_text(item))]
-        if texts and all(isinstance(item, str) for item in value):
+        texts = [extracted for item in value if (extracted := _extract_text(item))]
+        if texts:
             return "\n".join(texts)
-        if len(texts) == 1:
-            return texts[0]
         return None
     if isinstance(value, dict):
+        # Prefer explicit Aprozo fields first, then common LLM-style keys.
         for key in (
             "answer",
             "response",
             "text",
             "message",
             "content",
+            "choices",
             "output",
             "result",
             "summary",
@@ -120,27 +115,19 @@ def _extract_text(value: Any) -> str | None:
             extracted = _extract_text(value.get(key))
             if extracted:
                 return extracted
-        choices = value.get("choices")
-        if isinstance(choices, list) and choices:
-            first = choices[0]
-            if isinstance(first, dict):
-                extracted = _extract_text(first.get("message"))
-                if extracted:
-                    return extracted
-                extracted = _extract_text(first.get("text"))
-                if extracted:
-                    return extracted
-        if len(value) == 1:
-            return _extract_text(next(iter(value.values())))
     return None
 
 
 def _format_output(payload: Any, raw_json: bool) -> str:
     if raw_json:
-        return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
+        return _pretty_json(payload)
     text = _extract_text(payload)
     if text:
         return text
+    return _pretty_json(payload)
+
+
+def _pretty_json(payload: Any) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
 
 
@@ -150,13 +137,17 @@ def ask(prompt: str, config: RequestConfig) -> str:
         with urllib.request.urlopen(request, timeout=config.timeout) as response:
             body_text = _read_response_body(response)
     except urllib.error.HTTPError as exc:
-        body_text = exc.read().decode("utf-8", errors="replace").strip()
+        try:
+            body = exc.read()
+        except Exception:
+            body = b""
+        body_text = body.decode("utf-8", errors="replace").strip()
         message = f"API request failed: {exc.code} {exc.reason}"
         if body_text:
             message = f"{message}\n{body_text}"
         raise CLIError(message) from exc
     except urllib.error.URLError as exc:
-        raise CLIError(f"Unable to reach {config.endpoint}: {exc.reason}") from exc
+        raise CLIError(f"Unable to reach {config.endpoint}: {exc.reason!s}") from exc
 
     if not body_text:
         raise CLIError("API returned an empty response.")
@@ -174,8 +165,10 @@ def ask(prompt: str, config: RequestConfig) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    parse = getattr(parser, "parse_intermixed_args", parser.parse_args)
-    args = parse(argv)
+    try:
+        args = parser.parse_intermixed_args(argv)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else 2
     try:
         prompt = _prompt_text(args.prompt)
         output = ask(
@@ -183,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
             RequestConfig(
                 endpoint=args.endpoint,
                 timeout=args.timeout,
-                token=args.token,
                 raw_json=args.json,
             ),
         )
