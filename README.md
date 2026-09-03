@@ -1,6 +1,6 @@
 # eic-ask
 
-`eic-ask` is a small Python CLI for querying the Aprozo API from the shell.
+`eic-ask` is a small Python CLI for querying the EIC Documentation API from the shell.
 
 ## Usage
 
