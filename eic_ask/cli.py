@@ -33,7 +33,7 @@ class RequestConfig:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="eic-ask",
-        description="Send a prompt to the EIC Aprozo query API.",
+        description="Send a prompt to the EIC Documentation query API.",
     )
     parser.add_argument("prompt", nargs="*", help="Prompt to send to the API or stdin.")
     parser.add_argument(
@@ -123,7 +123,7 @@ def _extract_text(value: Any) -> str | None:
             return "\n".join(texts)
         return None
     if isinstance(value, dict):
-        # Prefer explicit Aprozo fields first, then common LLM-style keys.
+        # Prefer explicit API fields first, then common LLM-style keys.
         for key in (
             "answer",
             "response",
