@@ -273,8 +273,8 @@ def _error_detail(body: bytes) -> str:
 
 def _retry_after(exc: urllib.error.HTTPError) -> float:
     try:
-        return min(float(exc.headers.get("Retry-After", "2")), 10.0)
-    except (TypeError, ValueError):
+        return min(float((exc.headers or {}).get("Retry-After", "2")), 10.0)
+    except (AttributeError, TypeError, ValueError):
         return 2.0
 
 

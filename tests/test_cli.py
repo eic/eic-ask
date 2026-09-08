@@ -377,7 +377,7 @@ class CliTests(unittest.TestCase):
         def fake_urlopen(request, timeout=None):
             calls["n"] += 1
             if calls["n"] == 1:
-                raise urllib.error.HTTPError(request.full_url, 503, "Busy", {"Retry-After": "0"}, io.BytesIO(b""))
+                raise urllib.error.HTTPError(request.full_url, 503, "Busy", None, io.BytesIO(b""))
             return _FakeResponse('{"answer":"ok"}')
 
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
