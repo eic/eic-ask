@@ -18,6 +18,8 @@ Useful options:
 
 - `-e, --endpoint` — override the API URL
 - `-t, --timeout` — set the request timeout in seconds
+- `-k, --top-k` — number of sources to retrieve and cite (default 3)
+- `-i, --interactive` — chat mode: follow-up questions keep context; `/new` resets, `exit` or Ctrl-D quits (also the default when run without a prompt in a terminal)
 - `--json` — print the full response as formatted JSON
 - `--no-references` / `--hide-references` — suppress numbered references printed below the answer
 

@@ -6,6 +6,7 @@ from unittest import mock
 import urllib.error
 import urllib.request
 
+from eic_ask import __version__
 from eic_ask.cli import _extract_text, main
 
 
@@ -56,7 +57,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(captured["url"], "https://api.aprozo.com/query")
         self.assertEqual(captured["timeout"], 30.0)
-        self.assertEqual(captured["body"], {"query": "What is a good example for podio data analysis in C++?"})
+        self.assertEqual(captured["body"], {"query": "What is a good example for podio data analysis in C++?", "top_k": 3})
 
     def test_user_agent_is_versioned(self):
         captured = {}
@@ -71,7 +72,7 @@ class CliTests(unittest.TestCase):
             exit_code = main(["status"])
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(captured["user_agent"], "eic-ask/0.1.0")
+        self.assertEqual(captured["user_agent"], f"eic-ask/{__version__}")
 
     def test_http_error_is_reported_clearly(self):
         error = urllib.error.HTTPError(
@@ -99,7 +100,7 @@ class CliTests(unittest.TestCase):
         stdin = io.StringIO("pipe this in")
 
         def fake_urlopen(request, timeout=None):
-            self.assertEqual(json.loads(request.data.decode("utf-8")), {"query": "pipe this in"})
+            self.assertEqual(json.loads(request.data.decode("utf-8")), {"query": "pipe this in", "top_k": 3})
             return _FakeResponse('{"answer":"stdin worked"}')
 
         with mock.patch("sys.stdin", new=stdin), mock.patch.object(
@@ -287,6 +288,133 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIsNone(captured["auth"])
+
+
+    def test_top_k_flag_is_sent(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout=None):
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return _FakeResponse('{"answer":"ok"}')
+
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=io.StringIO()
+        ):
+            exit_code = main(["-k", "5", "status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(captured["body"]["top_k"], 5)
+
+    def test_duplicate_references_are_collapsed(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse(
+                '{"answer":"x [1]","citations":[{"title":"A","url":"https://a"},{"title":"A","url":"https://a"},{"title":"B","url":"https://b"}]}'
+            )
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            main(["status"])
+
+        output = stdout.getvalue()
+        self.assertEqual(output.count("https://a"), 1)
+        self.assertIn("[2] B (https://b)", output)
+
+    def test_refusal_hides_references(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse(
+                '{"answer":"I couldn\'t find enough support in the indexed sources.","citations":[{"title":"A","url":"https://a"}],"retrieval_debug":{"generation":{"support":"insufficient"}}}'
+            )
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            main(["status"])
+
+        self.assertNotIn("https://a", stdout.getvalue())
+
+    def test_missing_answer_text_gives_short_message(self):
+        def fake_urlopen(request, timeout=None):
+            return _FakeResponse('{"citations":[],"retrieval_debug":{"big":"x"}}')
+
+        stdout = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=stdout
+        ):
+            main(["status"])
+
+        self.assertIn("no answer text", stdout.getvalue())
+        self.assertNotIn("retrieval_debug", stdout.getvalue())
+
+    def test_http_error_body_is_truncated_and_detail_preferred(self):
+        error = urllib.error.HTTPError(
+            "https://api.aprozo.com/query",
+            530,
+            "",
+            {},
+            io.BytesIO(json.dumps({"detail": "tunnel down", "junk": "z" * 5000}).encode()),
+        )
+
+        def fake_urlopen(*args, **kwargs):
+            raise error
+
+        stderr = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stderr", new=stderr
+        ), mock.patch("time.sleep"):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("530", stderr.getvalue())
+        self.assertIn("tunnel down", stderr.getvalue())
+        self.assertLess(len(stderr.getvalue()), 400)
+
+    def test_retryable_status_is_retried_once(self):
+        calls = {"n": 0}
+
+        def fake_urlopen(request, timeout=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise urllib.error.HTTPError(request.full_url, 503, "Busy", None, io.BytesIO(b""))
+            return _FakeResponse('{"answer":"ok"}')
+
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "sys.stdout", new=io.StringIO()
+        ), mock.patch("time.sleep"):
+            exit_code = main(["status"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(calls["n"], 2)
+
+    def test_interactive_mode_sends_history_and_resets_on_new(self):
+        bodies = []
+
+        def fake_urlopen(request, timeout=None):
+            bodies.append(json.loads(request.data.decode("utf-8")))
+            return _FakeResponse('{"answer":"A%d","citations":[]}' % len(bodies))
+
+        lines = iter(["what is X", "and Y?", "/new", "fresh", "exit"])
+        with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
+            "builtins.input", side_effect=lambda _p: next(lines)
+        ), mock.patch("sys.stdout", new=io.StringIO()), mock.patch("sys.stderr", new=io.StringIO()):
+            exit_code = main(["-i"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(bodies), 3)
+        self.assertNotIn("history", bodies[0])
+        self.assertEqual(
+            bodies[1]["history"],
+            [{"role": "user", "content": "what is X"}, {"role": "assistant", "content": "A1"}],
+        )
+        self.assertNotIn("history", bodies[2])
+
+    def test_interactive_mode_ends_on_eof(self):
+        with mock.patch("builtins.input", side_effect=EOFError), mock.patch(
+            "sys.stderr", new=io.StringIO()
+        ):
+            self.assertEqual(main(["-i"]), 0)
 
 
 if __name__ == "__main__":
