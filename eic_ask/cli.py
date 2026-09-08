@@ -231,9 +231,11 @@ def _format_references(references: list[str]) -> str:
 
 def _is_refusal(payload: Any, text: str) -> bool:
     if isinstance(payload, dict):
-        generation = (payload.get("retrieval_debug") or {}).get("generation") or {}
-        if isinstance(generation, dict) and generation.get("support") == "insufficient":
-            return True
+        retrieval_debug = payload.get("retrieval_debug")
+        if isinstance(retrieval_debug, dict):
+            generation = retrieval_debug.get("generation") or {}
+            if isinstance(generation, dict) and generation.get("support") == "insufficient":
+                return True
     return text.startswith("I couldn't find")
 
 
