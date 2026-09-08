@@ -19,7 +19,7 @@ DEFAULT_TIMEOUT = 30.0
 DEFAULT_TOP_K = 3
 MAX_ERROR_BODY = 300
 RETRY_STATUSES = {429, 502, 503, 530}
-MAX_HISTORY_TURNS = 6
+MAX_HISTORY_MESSAGES = 6
 MAX_HISTORY_CHARS = 1500
 DEFAULT_USER_AGENT = f"eic-ask/{__version__}"
 
@@ -101,7 +101,7 @@ def _request_payload(
 ) -> bytes:
     payload: dict[str, Any] = {"query": prompt, "top_k": top_k}
     if history:
-        payload["history"] = history[-MAX_HISTORY_TURNS:]
+        payload["history"] = history[-MAX_HISTORY_MESSAGES:]
     return json.dumps(payload).encode("utf-8")
 
 
@@ -355,7 +355,7 @@ def interactive(config: RequestConfig, first: str = "") -> int:
                 {"role": "user", "content": line},
                 {"role": "assistant", "content": text[:MAX_HISTORY_CHARS]},
             ]
-            del history[:-MAX_HISTORY_TURNS]
+            del history[:-MAX_HISTORY_MESSAGES]
 
 
 def main(argv: list[str] | None = None) -> int:
