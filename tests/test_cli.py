@@ -9,6 +9,8 @@ import urllib.request
 from eic_ask import __version__
 from eic_ask.cli import _extract_text, main
 
+PROMPT = "what is EICrecon?"
+
 
 class _FakeResponse:
     def __init__(self, body: str):
@@ -25,6 +27,14 @@ class _FakeResponse:
 
 
 class CliTests(unittest.TestCase):
+    def test_short_prompt_is_rejected_before_any_request(self):
+        stderr = io.StringIO()
+        with mock.patch.object(urllib.request, "urlopen") as urlopen, mock.patch("sys.stderr", new=stderr):
+            exit_code = main(["init"])
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Ask a full question", stderr.getvalue())
+        urlopen.assert_not_called()
+
     def test_unquoted_prompt_is_joined_into_query(self):
         captured = {}
 
@@ -69,7 +79,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=io.StringIO()
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(captured["user_agent"], f"eic-ask/{__version__}")
@@ -90,7 +100,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stderr", new=stderr
         ):
-            exit_code = main(["--endpoint", "https://api.aprozo.com/query", "help"])
+            exit_code = main(["--endpoint", "https://api.aprozo.com/query", PROMPT])
 
         self.assertEqual(exit_code, 1)
         self.assertIn("API request failed: 400 Bad Request", stderr.getvalue())
@@ -119,7 +129,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stderr", new=stderr
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 1)
         self.assertIn("empty response", stderr.getvalue())
@@ -133,7 +143,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stderr", new=stderr
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 1)
         self.assertIn("invalid JSON", stderr.getvalue())
@@ -148,7 +158,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stderr", new=stderr
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 1)
         self.assertIn("Unable to reach", stderr.getvalue())
@@ -160,7 +170,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"EIC_ASK_TOKEN": "abc123"}, clear=False), mock.patch(
             "sys.stderr", new=stderr
         ):
-            exit_code = main(["--endpoint", "http://example.com/query", "status"])
+            exit_code = main(["--endpoint", "http://example.com/query", PROMPT])
 
         self.assertEqual(exit_code, 1)
         self.assertIn("EIC_ASK_TOKEN is only sent to HTTPS endpoints", stderr.getvalue())
@@ -173,7 +183,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            exit_code = main(["--json", "status"])
+            exit_code = main(["--json", PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertIn('"nested": {', stdout.getvalue())
@@ -189,7 +199,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         output = stdout.getvalue()
@@ -207,7 +217,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            exit_code = main(["--no-references", "status"])
+            exit_code = main(["--no-references", PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertNotIn("[1] Brookhaven National Laboratory", stdout.getvalue())
@@ -222,7 +232,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         output = stdout.getvalue()
@@ -239,7 +249,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(stdout.getvalue().strip(), "hello")
@@ -252,7 +262,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(stdout.getvalue().strip(), "hello")
@@ -267,7 +277,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"EIC_ASK_TOKEN": "abc123"}, clear=False), mock.patch.object(
             urllib.request, "urlopen", side_effect=fake_urlopen
         ), mock.patch("sys.stdout", new=io.StringIO()):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertIsNotNone(captured["auth"])
@@ -284,7 +294,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
             urllib.request, "urlopen", side_effect=fake_urlopen
         ), mock.patch("sys.stdout", new=io.StringIO()):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertIsNone(captured["auth"])
@@ -300,7 +310,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=io.StringIO()
         ):
-            exit_code = main(["-k", "5", "status"])
+            exit_code = main(["-k", "5", PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(captured["body"]["top_k"], 5)
@@ -315,7 +325,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            main(["status"])
+            main([PROMPT])
 
         output = stdout.getvalue()
         self.assertEqual(output.count("https://a"), 1)
@@ -331,7 +341,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            main(["status"])
+            main([PROMPT])
 
         self.assertNotIn("https://a", stdout.getvalue())
 
@@ -343,7 +353,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=stdout
         ):
-            main(["status"])
+            main([PROMPT])
 
         self.assertIn("no answer text", stdout.getvalue())
         self.assertNotIn("retrieval_debug", stdout.getvalue())
@@ -364,7 +374,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stderr", new=stderr
         ), mock.patch("time.sleep"):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 1)
         self.assertIn("530", stderr.getvalue())
@@ -383,7 +393,7 @@ class CliTests(unittest.TestCase):
         with mock.patch.object(urllib.request, "urlopen", side_effect=fake_urlopen), mock.patch(
             "sys.stdout", new=io.StringIO()
         ), mock.patch("time.sleep"):
-            exit_code = main(["status"])
+            exit_code = main([PROMPT])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(calls["n"], 2)

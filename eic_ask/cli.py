@@ -21,6 +21,7 @@ MAX_ERROR_BODY = 300
 RETRY_STATUSES = {429, 502, 503, 530}
 MAX_HISTORY_MESSAGES = 6
 MAX_HISTORY_CHARS = 1500
+MIN_PROMPT_WORDS = 3
 DEFAULT_USER_AGENT = f"eic-ask/{__version__}"
 
 
@@ -319,7 +320,19 @@ def _query(
     return payload
 
 
+def _check_prompt(prompt: str) -> None:
+    # One-shot single words are almost never questions: they come from
+    # shells and package sandboxes trying subcommands, each an LLM call.
+    # Interactive follow-ups ("why?") are exempt — a person is typing.
+    if len(prompt.split()) < MIN_PROMPT_WORDS:
+        raise CLIError(
+            f"Ask a full question ({MIN_PROMPT_WORDS}+ words), "
+            'e.g. eic-ask "how do I update eic-shell?"'
+        )
+
+
 def ask(prompt: str, config: RequestConfig) -> str:
+    _check_prompt(prompt)
     return _format_output(_query(prompt, config), config.raw_json, config.show_references)
 
 
